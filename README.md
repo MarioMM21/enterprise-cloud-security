@@ -102,6 +102,67 @@ Queries Config, Security Hub, and GuardDuty for current state. Calculates weight
 | CIS 3.9 | VPC flow logging must be enabled | MEDIUM | ✅ |
 
 ---
+## IAM Architecture — Least Privilege Design
+
+| Role | Purpose | Key Permissions |
+|---|---|---|
+| `enterprise-config-role` | AWS Config recorder | S3 PutObject to security logs bucket only |
+| `enterprise-lambda-security-role` | All Lambda functions | Scoped S3, SNS, Config, SecHub, IAM read, SSM read |
+
+### Design Decisions
+- **No AdministratorAccess anywhere** — every role has explicit allow statements
+- **S3 remediation scoped** — Lambda can only call `PutBucketPublicAccessBlock` and `ListAllMyBuckets` — cannot delete, read data, or modify bucket contents
+- **SNS publish scoped** — Lambda can only publish to the two enterprise SNS topics — not any SNS topic
+- **SecureString for secrets** — Jira API token stored as KMS-encrypted SSM SecureString — Lambda has GetParameter permission only
+
+## Production Considerations
+
+### Auto-Remediation Safety
+- **Scope limiting:** S3 remediation only applies Block Public Access — it never deletes data or modifies bucket contents
+- **Audit trail:** Every remediation action is logged to CloudWatch and triggers an SNS notification with full context before and after
+- **Rollback:** All infrastructure is Terraform-managed — `terraform destroy` cleanly removes everything with zero orphaned resources
+
+### False Positive Handling
+- **Severity thresholds:** Only CRITICAL findings trigger auto-remediation — HIGH and above require human review via Jira ticket
+- **Source validation:** Lambda validates finding source (GuardDuty vs Security Hub) and adjusts response accordingly
+- **Simulation mode:** Jira integration falls back gracefully to SNS notification if credentials are not configured
+
+### IAM Least Privilege Design
+- **Role separation:** Config role, Lambda role, and remediation policies are completely separate with no shared permissions
+- **No wildcards on destructive actions:** S3 remediation permissions are scoped to specific API actions only
+- **SSM SecureString:** Jira credentials stored as encrypted SecureString — never in environment variables or code
+
+### Logging & Auditability
+- **CloudTrail:** Every API call logged across all regions — full audit trail of every action taken by every service
+- **CloudWatch:** Remediation metrics published to Enterprise/Security namespace — queryable and alertable
+- **SNS notifications:** Every auto-remediation sends a notification documenting what was changed, when, and why
+
+## Test Scenarios — How to Validate the Platform
+
+### Scenario 1 — S3 Public Access (CRITICAL)
+```bash
+# Create a public S3 bucket
+aws s3api put-public-access-block \
+  --bucket your-bucket \
+  --public-access-block-configuration "BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false"
+```
+**Expected:** Lambda detects via Config rule → auto-remediates → SNS CRITICAL alert sent → Jira ticket created → CloudTrail logs the remediation
+
+### Scenario 2 — Root Account Activity (HIGH)
+Simulate by logging into AWS console as root user and performing any API call.
+
+**Expected:** GuardDuty detects root credential usage → EventBridge routes to severity Lambda → SNS HIGH alert → Jira ticket created for security team review
+
+### Scenario 3 — MFA Not Enabled (HIGH)
+Create an IAM user without MFA enabled.
+
+**Expected:** Config rule `enterprise-mfa-enabled-iam-console` flags as NON_COMPLIANT → Security Hub aggregates finding → Daily compliance report score decreases → Finding appears in executive report
+
+### Scenario 4 — CloudTrail Disabled (CRITICAL)
+```bash
+aws cloudtrail stop-logging --name enterprise-security-trail
+```
+**Expected:** Config rule `enterprise-cloudtrail-enabled` immediately flags NON_COMPLIANT → CRITICAL finding routed to auto-remediation Lambda → CloudTrail re-enabled → SNS CRITICAL alert sent
 
 ## Tech Stack
 
