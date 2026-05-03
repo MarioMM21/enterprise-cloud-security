@@ -4,7 +4,7 @@
 ![Terraform](https://img.shields.io/badge/Terraform-IaC-purple?style=for-the-badge&logo=terraform)
 ![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
 ![CIS](https://img.shields.io/badge/CIS-Benchmark%20v1.4.0-red?style=for-the-badge)
-![Inspector](https://img.shields.io/badge/AWS-Inspector-green?style=for-the-badge&logo=amazon-aws)
+![Inspector](https://img.shields.io/badge/AWS-Inspector-green?style=for-the-badge&logo=amazon-aws)![Terraform Validate](https://github.com/MarioMM21/enterprise-cloud-security/actions/workflows/terraform-validate.yml/badge.svg)
 
 ## Overview
 
